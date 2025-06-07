@@ -3,3 +3,5 @@
 .RData
 .Ruserdata
 .env
+/dados_sensiveis
+df_inicial.csv
