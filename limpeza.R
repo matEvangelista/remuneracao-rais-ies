@@ -31,13 +31,11 @@ cbos_unicos <- cursos_empregos$cbo %>% unique()
 
 
 # query para selecionar as colunas do CBO
-nomes_colunas <- c("motivo_desligamento", "cbo_ocupacao_2002", "vinculo_ativo_31_12",
-                   "faixa_etaria", "faixa_hora_contrat", "faixa_tempo_emprego",
+nomes_colunas <- c("cbo_ocupacao_2002", "faixa_etaria", "faixa_hora_contrat",
                    "faixa_remun_media_sm", "faixa_tempo_emprego", "escolaridade_apos_2005",
-                   "qtd_hora_contr", "idade", "mes_admissao", "mes_desligamento",
-                   "mun_trab", "municipio", "raca_cor", "vl_remun_media_nom",
-                   "sexo_trabalhador", "tamanho_estabelecimento", "tempo_emprego",
-                   "tipo_admissao", "tipo_estab", "tipo_vinculo", "mun_trab")
+                   "qtd_hora_contr", "idade", "municipio", "raca_cor", "vl_remun_media_nom",
+                   "sexo_trabalhador", "tamanho_estabelecimento",
+                   "tipo_admissao", "tipo_estab", "tipo_vinculo")
 
 query_rais <- paste0("select ", paste(nomes_colunas, collapse = " ,"),
                      "\nfrom ae1.rais_microdados \nwhere cbo_ocupacao_2002 in (",
@@ -56,14 +54,11 @@ iqr = q3 - q1
 limite_outlier <- q3 + 3 * iqr
 # 3o filtro: removendo salários muito altos
 df_inicial_filtro_3 <- df_inicial_filtro_2 %>% filter(vl_remun_media_nom < limite_outlier)
-# 4o filtro: idades realistas para trabalho
-df_inicial_filtro_4 <- df_inicial_filtro_3 %>% mutate(tempo_emprego_anos = tempo_emprego / 12) %>%
-  filter (idade - tempo_emprego_anos > 14)
+
 # removendo "não identificado" das etnias
-df_inicial_filtro_5 <- df_inicial_filtro_4 %>% filter(raca_cor != 9)
+df_inicial_filtro_4 <- df_inicial_filtro_3 %>% filter(raca_cor != 9)
 
-
-# Renomeando colunas
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>% filter(municipio != 999999)
 
 ## tabelas auxiliares
 tabela_etnias <- data.frame(
@@ -120,24 +115,21 @@ join_with_dictionary <- function(data, dict_df, column_name, value_col_suffix = 
 }
 
 ## homem e mulher
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>%
   mutate(sexo_trabalhador =  ifelse(sexo_trabalhador == 1, "Homem", "Mulher"))
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>% left_join(tabela_etnias,
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>% left_join(tabela_etnias,
                                                          by=c("raca_cor"="codigo")) %>%
   select(-raca_cor)
 
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>%
   join_with_dictionary(dicionario_rais, "faixa_etaria")
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>%
   join_with_dictionary(dicionario_rais, "tamanho_estabelecimento")
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
-  join_with_dictionary(dicionario_rais, "motivo_desligamento")
-
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>%
   join_with_dictionary(dicionario_rais, "tipo_admissao")
 
 dicionario_rais_vinc <- data.frame(
@@ -160,14 +152,14 @@ dicionario_rais_vinc <- data.frame(
   stringsAsFactors = FALSE
 )
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>%
   join_with_dictionary(dicionario_rais_vinc, "tipo_vinculo")
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>% left_join(escolaridade_df,
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>% left_join(escolaridade_df,
                                               by=c("escolaridade_apos_2005"="codigo")) %>%
   select(-escolaridade_apos_2005)
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>%
   mutate(tipo_estab = case_when(
     tipo_estab == 1 ~ "CNPJ",
     tipo_estab == 6 ~ "CNO",
@@ -180,28 +172,63 @@ municipios <- read_municipality(year=2023)
 municipios$code_muni_6 <- (municipios$code_muni/10) %>% floor()
 
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>% 
-  left_join(municipios %>% rename_with(~ paste0(., "_mun_trab"), -code_muni_6),
-            by = c("mun_trab" = "code_muni_6"))
-
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>% 
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>% 
   left_join(municipios %>% rename_with(~ paste0(., "_municipio"), -code_muni_6),
             by = c("municipio" = "code_muni_6"))
 
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>%
   join_with_dictionary(dicionario_rais, "faixa_tempo_emprego")
 
-df_inicial_filtro_5 <- df_inicial_filtro_5 %>% rename(faixa_horas_contratadas = faixa_hora_contrat) %>%
+df_inicial_filtro_4 <- df_inicial_filtro_4 %>% rename(faixa_horas_contratadas = faixa_hora_contrat) %>%
   join_with_dictionary(dicionario_rais, "faixa_horas_contratadas")
 
-df_final <- df_inicial_filtro_5 %>% rename(faixa_remuneracao_media_sm = faixa_remun_media_sm) %>%
+df_final <- df_inicial_filtro_4 %>% rename(faixa_remuneracao_media_sm = faixa_remun_media_sm) %>%
   join_with_dictionary(dicionario_rais, "faixa_remuneracao_media_sm")
 
 df_final <- df_final %>% select(-(matches("geom")))
 
-DBI::dbWriteTable(con, DBI::Id(schema="ae1", table="dados_rais_limpos"),
+df_final <- df_final %>% left_join(cursos_empregos %>% select(cargo, cbo) %>% distinct(),
+                                   by=c("cbo_ocupacao_2002"="cbo"))
+
+df_final <- df_final %>% rename(c("cbo"="cbo_ocupacao_2002"))
+
+DBI::dbWriteTable(con, DBI::Id(schema=DB_SCHEMA, table="dados_rais_limpos"),
                   df_final, overwrite = TRUE, append = FALSE)
 
+df_final %>% write.csv("dados_sensiveis/dados_rais_limpos.csv", row.names = F)
+
+variaveis_df <- data.frame(
+  nome_coluna = c(
+    "cbo", "cargo", "vl_remun_media_nom", "etnia", "sexo_trabalhador", "idade",
+    "grau_de_instrucao", "faixa_etaria", "faixa_remuneracao_media_sm",
+    "qtd_hora_contr", "faixa_horas_contratadas", "tipo_vinculo", "tipo_admissao", 
+    "tipo_estab", "tamanho_estabelecimento", "faixa_tempo_emprego",
+    "municipio", "code_muni_municipio", "name_muni_municipio",
+    "code_state_municipio", "abbrev_state_municipio", "name_state_municipio",
+    "code_region_municipio", "name_region_municipio", "curso_ies"
+  ),
+  tipo_coluna = c(
+    "fator", "fator", "número", "fator", "fator", "número",
+    "fator", "fator", "fator",
+    "número", "fator", "fator", "fator", 
+    "fator", "fator", "fator",
+    "texto", "texto", "texto",
+    "texto", "texto", "texto",
+    "texto", "texto", "texto"
+  ),
+  nome_real = c(
+    "Código CBO", "Cargo", "Remuneração média nominal", "Etnia", "Sexo", "Idade",
+    "Grau de instrução", "Faixa etária", "Faixa de remuneração média (SM)",
+    "Horas contratadas", "Faixa de horas contratadas", "Tipo de vínculo", "Tipo de admissão",
+    "Tipo de estabelecimento", "Tamanho do estabelecimento", "Faixa de tempo de emprego",
+    "Município", "Código do município", "Nome do município",
+    "Código do estado", "Sigla do estado", "Nome do estado",
+    "Código da região", "Nome da região", "Curso Superior"
+  ),
+  stringsAsFactors = FALSE
+)
+
+variaveis_df %>% write.csv("dados_sensiveis/traducao.csv")
 
 
