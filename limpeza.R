@@ -23,9 +23,7 @@ con <- dbConnect(drv, dbname = DB_NAME,
 
 
 # lendo tabelas com empregos
-cursos_empregos <- openxlsx::read.xlsx("dados_sensiveis/cursos_empregos.xlsx")
-cursos_empregos <- clean_names(cursos_empregos)
-cursos_empregos <- cursos_empregos %>% filter(criterio == 'Amplie+')
+cursos_empregos <- read.csv("dados_sensiveis/dados_manualmente.csv")
 
 cbos_unicos <- cursos_empregos$cbo %>% unique()
 
@@ -45,20 +43,20 @@ df_inicial <- dbGetQuery(con, query_rais) %>% clean_names()
 
 # 1o filtro: ensino médio completo
 df_inicial_filtro_1 <- df_inicial %>% filter(escolaridade_apos_2005 > 6)
-# 2o remuneração acima de 1SM de 2023
-df_inicial_filtro_2 <- df_inicial_filtro_1 %>% filter(vl_remun_media_nom >= 1302)
+# 2o remuneração acima de 1/2SM de 2023
+df_inicial_filtro_2 <- df_inicial_filtro_1 %>% filter(vl_remun_media_nom >= 1302/2)
 
 q1 <- quantile(df_inicial_filtro_2$vl_remun_media_nom, 0.25, na.rm = TRUE)
 q3 <- quantile(df_inicial_filtro_2$vl_remun_media_nom, 0.75, na.rm = TRUE)
-iqr = q3 - q1
-limite_outlier <- q3 + 3 * iqr
+iqr <-  q3 - q1
+limite_outlier <- q3 + 4 * iqr
 # 3o filtro: removendo salários muito altos
 df_inicial_filtro_3 <- df_inicial_filtro_2 %>% filter(vl_remun_media_nom < limite_outlier)
 
-# removendo "não identificado" das etnias
-df_inicial_filtro_4 <- df_inicial_filtro_3 %>% filter(raca_cor != 9)
-
-df_inicial_filtro_4 <- df_inicial_filtro_4 %>% filter(municipio != 999999)
+# 4o filtro: válidos
+df_inicial_filtro_4 <- df_inicial_filtro_3 %>% filter(raca_cor != 9,
+                                                      municipio != 999999,
+                                                      faixa_hora_contrat != 99)
 
 ## tabelas auxiliares
 tabela_etnias <- data.frame(
@@ -188,8 +186,8 @@ df_final <- df_inicial_filtro_4 %>% rename(faixa_remuneracao_media_sm = faixa_re
 
 df_final <- df_final %>% select(-(matches("geom")))
 
-df_final <- df_final %>% left_join(cursos_empregos %>% select(cargo, cbo) %>% distinct(),
-                                   by=c("cbo_ocupacao_2002"="cbo"))
+df_final <- df_final %>% left_join(cursos_empregos %>% select(profissao, cbo) %>% distinct(),
+                                   by=c("cbo_ocupacao_2002"="cbo"), relationship = 'many-to-many')
 
 df_final <- df_final %>% rename(c("cbo"="cbo_ocupacao_2002"))
 
@@ -197,6 +195,8 @@ DBI::dbWriteTable(con, DBI::Id(schema=DB_SCHEMA, table="dados_rais_limpos"),
                   df_final, overwrite = TRUE, append = FALSE)
 
 df_final %>% write.csv("dados_sensiveis/dados_rais_limpos.csv", row.names = F)
+
+df_final %>% saveRDS("dados_sensiveis/dados_rais_limpos.rds")
 
 variaveis_df <- data.frame(
   nome_coluna = c(
